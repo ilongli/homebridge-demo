@@ -1,7 +1,12 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
+import { SVV_CMD, SAVE_SOUND_ITEMS_CMD, SOUND_ITEMS_PATH } from './cmd';
 import { ExamplePlatformAccessory } from './platformAccessory';
+
+import { execSync } from 'child_process';
+
+import fs from 'fs';
 
 /**
  * HomebridgePlatform
@@ -13,13 +18,23 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
 
   // this is used to track restored cached accessories
-  public readonly accessories: PlatformAccessory[] = [];
+  public accessories: PlatformAccessory[] = [];
+
+  public defaultSpeakerUUID = '';
 
   constructor(
     public readonly log: Logger,
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
+
+    try {
+      // 保存音频设备列表到sound-items.json文件
+      execSync(`"${SVV_CMD}" ${SAVE_SOUND_ITEMS_CMD}`);
+    } catch (error) {
+      this.log.error('保存sound-item.json失败：', (<Buffer> error).toString());
+    }
+
     this.log.debug('Finished initializing platform:', this.config.name);
 
     // When this event is fired it means Homebridge has restored all cached accessories from disk.
@@ -51,27 +66,30 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
    */
   discoverDevices() {
 
-    // EXAMPLE ONLY
-    // A real plugin you would discover accessories from the local network, cloud services
-    // or a user-defined array in the platform config.
-    const exampleDevices = [
-      {
-        exampleUniqueId: 'ABCD',
-        exampleDisplayName: 'Bedroom',
-      },
-      {
-        exampleUniqueId: 'EFGH',
-        exampleDisplayName: 'Kitchen',
-      },
-    ];
+    // 读取所有音频设备列表
+    let fileContent = fs.readFileSync(SOUND_ITEMS_PATH, 'utf8');
+    fileContent = fileContent.replace(/^\uFEFF/, '');
+    const soundItems = JSON.parse(fileContent) || [];
+
+    // 筛选出所有speakers
+    const speakers = soundItems.filter((soundItem) => {
+      return soundItem.Type === 'Device' && soundItem.Direction === 'Render';
+    });
+
+    this.log.debug('speakers:', speakers);
 
     // loop over the discovered devices and register each one if it has not already been registered
-    for (const device of exampleDevices) {
+    for (const device of speakers) {
 
       // generate a unique id for the accessory this should be generated from
       // something globally unique, but constant, for example, the device serial
       // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.exampleUniqueId);
+      const uuid = this.api.hap.uuid.generate(device['Item ID']);
+
+      // 检查是否当前默认的speaker
+      if (device['Default'] !== '') {
+        this.defaultSpeakerUUID = uuid;
+      }
 
       // see if an accessory with the same uuid has already been registered and restored from
       // the cached devices we stored in the `configureAccessory` method above
@@ -82,12 +100,15 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
 
         // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-        // existingAccessory.context.device = device;
-        // this.api.updatePlatformAccessories([existingAccessory]);
+        existingAccessory.context.device = device;
+        this.api.updatePlatformAccessories([existingAccessory]);
 
         // create the accessory handler for the restored accessory
         // this is imported from `platformAccessory.ts`
         new ExamplePlatformAccessory(this, existingAccessory);
+
+        // 缓存和目前存在的设备能匹配上，从this.accessories中删除
+        this.accessories.splice(this.accessories.indexOf(existingAccessory), 1);
 
         // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
         // remove platform accessories when no longer present
@@ -95,10 +116,10 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
       } else {
         // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device.exampleDisplayName);
+        this.log.info('Adding new accessory:', device['Name']);
 
         // create a new accessory
-        const accessory = new this.api.platformAccessory(device.exampleDisplayName, uuid);
+        const accessory = new this.api.platformAccessory(device['Name'], uuid);
 
         // store a copy of the device object in the `accessory.context`
         // the `context` property can be used to store any data about the accessory you may need
@@ -112,5 +133,12 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
       }
     }
+
+    // 没有匹配上的accessory删除掉
+    if (this.accessories.length > 0) {
+      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, this.accessories);
+      this.accessories = [];
+    }
+
   }
 }
