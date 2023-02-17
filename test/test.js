@@ -1,5 +1,5 @@
 
-const execSync = require('child_process').execSync;
+/* const execSync = require('child_process').execSync;
 
 const a = 'public/SoundVolumeView.exe';
 const b = 'public/sound-items.json';
@@ -22,3 +22,8 @@ console.log('fileContent:', fileContent);
 const soundItems = JSON.parse(fileContent) || [];
 
 console.log(soundItems);
+ */
+const path = require('path');
+
+let p = path.join(__dirname, '..', 'public/SoundVolumeView.exe');
+console.log(p);

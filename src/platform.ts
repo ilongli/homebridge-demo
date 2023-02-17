@@ -4,9 +4,10 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { SVV_CMD, SAVE_SOUND_ITEMS_CMD, SOUND_ITEMS_PATH } from './cmd';
 import { ExamplePlatformAccessory } from './platformAccessory';
 
-import { execSync } from 'child_process';
+import { execSync } from 'node:child_process';
 
-import fs from 'fs';
+import fs from 'node:fs';
+import process from 'node:process';
 
 /**
  * HomebridgePlatform
@@ -27,6 +28,13 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
+
+
+    // TEST
+    this.log.error('------1:', process.execPath);
+    this.log.error('------2:', __dirname);
+    this.log.error('------3:', process.cwd());
+
 
     try {
       // 保存音频设备列表到sound-items.json文件
@@ -68,6 +76,7 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
 
     // 读取所有音频设备列表
     let fileContent = fs.readFileSync(SOUND_ITEMS_PATH, 'utf8');
+    this.log.debug('SOUND_ITEMS_PATH:', SOUND_ITEMS_PATH);
     fileContent = fileContent.replace(/^\uFEFF/, '');
     const soundItems = JSON.parse(fileContent) || [];
 

@@ -46,12 +46,12 @@ export class ExamplePlatformAccessory {
     // each service must implement at-minimum the "required characteristics" for the given service type
     // see https://developers.homebridge.io/#/service/Lightbulb
 
-    // this.service.getCharacteristic(this.platform.Characteristic.On)
-    //   .onSet(this.setOn.bind(this))                // SET - bind to the `setOn` method below
-    //   .onGet(this.getOn.bind(this));               // GET - bind to the `getOn` method below
+    /*     this.service.getCharacteristic(this.platform.Characteristic.On)
+      .onSet(this.setOn.bind(this))
+      .onGet(this.getOn.bind(this));
 
-    // this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-    //   .onSet(this.setBrightness.bind(this));       // SET - bind to the 'setBrightness` method below
+    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
+      .onSet(this.setBrightness.bind(this));    */
 
     this.service.getCharacteristic(this.platform.Characteristic.Mute)
       .onGet(this.getMute.bind(this))
