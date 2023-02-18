@@ -2,6 +2,15 @@ import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 
 import { ExampleHomebridgePlatform } from './platform';
 
+import {
+  getVolumeByItemId,
+  setVolumeByItemId,
+  muteByItemId,
+  unMuteByItemId,
+  switchSpeakerByItemId,
+} from './cmd-utils';
+
+
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
@@ -19,12 +28,18 @@ export class ExamplePlatformAccessory {
     Volume: 100,
     On: false,
     Brightness: 0,
+    CurrentMediaState: this.platform.Characteristic.CurrentMediaState.PLAY,
+    TargetMediaState: this.platform.Characteristic.TargetMediaState.PLAY,
   };
+
+  private itemId: string;
 
   constructor(
     private readonly platform: ExampleHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
+
+    this.itemId = accessory.context.device['Item ID'];
 
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
@@ -36,8 +51,9 @@ export class ExamplePlatformAccessory {
     // you can create multiple services for each accessory
 
 
-    // this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
-    this.service = this.accessory.getService(this.platform.Service.Speaker) || this.accessory.addService(this.platform.Service.Speaker);
+    this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    // this.service = this.accessory.getService(this.platform.Service.Speaker) || this.accessory.addService(this.platform.Service.Speaker);
+
 
     // set the service name, this is what is displayed as the default name on the Home app
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
@@ -53,25 +69,51 @@ export class ExamplePlatformAccessory {
     this.service.getCharacteristic(this.platform.Characteristic.Brightness)
       .onSet(this.setBrightness.bind(this));    */
 
-    this.service.getCharacteristic(this.platform.Characteristic.Mute)
-      .onGet(this.getMute.bind(this))
-      .onSet(this.setMute.bind(this));
+    /*     this.service.getCharacteristic(this.platform.Characteristic.CurrentMediaState)
+      .onGet(this.getCurrentMediaState.bind(this));
 
-    this.service.getCharacteristic(this.platform.Characteristic.Active)
+
+    this.service.getCharacteristic(this.platform.Characteristic.TargetMediaState)
+      .onGet(this.getTargetMediaState.bind(this))
+      .onSet(this.setTargetMediaState.bind(this));
+ */
+    /*     this.service.getCharacteristic(this.platform.Characteristic.Mute)
+      .onGet(this.getMute.bind(this))
+      .onSet(this.setMute.bind(this)); */
+
+    this.service.getCharacteristic(this.platform.Characteristic.On)
       .onGet(this.getActive.bind(this))
       .onSet(this.setActive.bind(this));
 
 
-    this.service.getCharacteristic(this.platform.Characteristic.Volume)
+    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
       .onGet(this.getVolume.bind(this))
       .onSet(this.setVolume.bind(this));
 
   }
 
-  async setMute(value: CharacteristicValue) {
-    this.states.Mute = value as boolean;
 
-    this.platform.log.debug('Set Characteristic Mute ->', value);
+  async getCurrentMediaState(): Promise<CharacteristicValue> {
+    const currentMediaState = this.states.CurrentMediaState;
+
+    this.platform.log.debug('Get Characteristic getCurrentMediaState ->', currentMediaState);
+
+    return currentMediaState;
+  }
+
+
+  async getTargetMediaState(): Promise<CharacteristicValue> {
+    const targetMediaState = this.states.TargetMediaState;
+
+    this.platform.log.debug('Get Characteristic TargetMediaState ->', targetMediaState);
+
+    return targetMediaState;
+  }
+
+  async setTargetMediaState(value: CharacteristicValue) {
+    this.states.TargetMediaState = value as number;
+
+    this.platform.log.debug('Set Characteristic TargetMediaState ->', value);
   }
 
   async getMute(): Promise<CharacteristicValue> {
@@ -82,80 +124,53 @@ export class ExamplePlatformAccessory {
     return isMute;
   }
 
+  async setMute(value: CharacteristicValue) {
+    this.states.Mute = value as boolean;
 
-  async setActive() {
+    this.platform.log.debug('Set Characteristic Mute ->', value);
+  }
 
-    this.platform.log.debug('Set Characteristic Active ->', this.accessory.displayName);
 
-    this.platform.defaultSpeakerUUID = this.accessory.UUID;
+  async setActive(value: CharacteristicValue) {
+
+    const isOn = value as boolean;
+
+    this.platform.log.debug(`[${this.accessory.displayName}]Set Active ->`, isOn);
+
+    if (isOn) {
+      // 切换到这个speaker
+      // switch the this speaker
+      switchSpeakerByItemId(this.itemId);
+      unMuteByItemId(this.itemId);
+      this.platform.updateDevicesState(this.accessory);
+    } else {
+      // TODO，如果是off，相当于将其静音
+      muteByItemId(this.itemId);
+    }
+
+
 
   }
 
   async getActive(): Promise<CharacteristicValue> {
     const isActive = this.platform.defaultSpeakerUUID === this.accessory.UUID;
 
-    this.platform.log.debug('Get Characteristic Active ->', isActive);
+    this.platform.log.debug(`[${this.accessory.displayName}]Set Active ->`, isActive);
 
-    return isActive ? this.platform.Characteristic.Active.ACTIVE : this.platform.Characteristic.Active.INACTIVE;
+    return isActive;
   }
 
   async getVolume(): Promise<CharacteristicValue> {
-    const volume = this.states.Volume;
-    this.platform.log.debug('Get Characteristic Volume ->', volume);
+    // const volume = this.states.Volume;
+    const volume = getVolumeByItemId(this.itemId);
+    this.platform.log.debug(`[${this.accessory.displayName}]Get Volume ->`, volume);
     return volume;
   }
 
   async setVolume(value: CharacteristicValue) {
-    this.states.Volume = value as number;
-
-    this.platform.log.debug('Set Characteristic Volume -> ', value);
-  }
-
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  async setOn(value: CharacteristicValue) {
-    // implement your own code to turn your device on/off
-    this.states.On = value as boolean;
-
-    this.platform.log.debug('Set Characteristic On ->', value);
-  }
-
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   *
-   * GET requests should return as fast as possbile. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   *
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
-   */
-  async getOn(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
-    const isOn = this.states.On;
-
-    this.platform.log.debug('Get Characteristic On ->', isOn);
-
-    // if you need to return an error to show the device as "Not Responding" in the Home app:
-    // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-
-    return isOn;
-  }
-
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
-   */
-  async setBrightness(value: CharacteristicValue) {
-    // implement your own code to set the brightness
-    this.states.Brightness = value as number;
-
-    this.platform.log.debug('Set Characteristic Brightness -> ', value);
+    // this.states.Volume = value as number;
+    setVolumeByItemId(this.itemId, value as number);
+    this.platform.log.debug(`[${this.accessory.displayName}]Set Volume ->`, value);
   }
 
 }

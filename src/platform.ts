@@ -1,13 +1,13 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
-import { SVV_CMD, SAVE_SOUND_ITEMS_CMD, SOUND_ITEMS_PATH } from './cmd';
+import { SOUND_ITEMS_PATH } from './cmd';
 import { ExamplePlatformAccessory } from './platformAccessory';
 
-import { execSync } from 'node:child_process';
+import { saveSoundItemFile } from './cmd-utils';
 
 import fs from 'node:fs';
-import process from 'node:process';
+// import process from 'node:process';
 
 /**
  * HomebridgePlatform
@@ -19,6 +19,9 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
 
   // this is used to track restored cached accessories
+  public cacheAccessories: PlatformAccessory[] = [];
+
+  // 目前正在使用的accessory
   public accessories: PlatformAccessory[] = [];
 
   public defaultSpeakerUUID = '';
@@ -31,17 +34,9 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
 
 
     // TEST
-    this.log.error('------1:', process.execPath);
+    /*     this.log.error('------1:', process.execPath);
     this.log.error('------2:', __dirname);
-    this.log.error('------3:', process.cwd());
-
-
-    try {
-      // 保存音频设备列表到sound-items.json文件
-      execSync(`"${SVV_CMD}" ${SAVE_SOUND_ITEMS_CMD}`);
-    } catch (error) {
-      this.log.error('保存sound-item.json失败：', (<Buffer> error).toString());
-    }
+    this.log.error('------3:', process.cwd()); */
 
     this.log.debug('Finished initializing platform:', this.config.name);
 
@@ -64,7 +59,7 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
     this.log.info('Loading accessory from cache:', accessory.displayName);
 
     // add the restored accessory to the accessories cache so we can track if it has already been registered
-    this.accessories.push(accessory);
+    this.cacheAccessories.push(accessory);
   }
 
   /**
@@ -74,18 +69,8 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
    */
   discoverDevices() {
 
-    // 读取所有音频设备列表
-    let fileContent = fs.readFileSync(SOUND_ITEMS_PATH, 'utf8');
-    this.log.debug('SOUND_ITEMS_PATH:', SOUND_ITEMS_PATH);
-    fileContent = fileContent.replace(/^\uFEFF/, '');
-    const soundItems = JSON.parse(fileContent) || [];
-
-    // 筛选出所有speakers
-    const speakers = soundItems.filter((soundItem) => {
-      return soundItem.Type === 'Device' && soundItem.Direction === 'Render';
-    });
-
-    this.log.debug('speakers:', speakers);
+    // get all speakers
+    const speakers = this.getAllSpeakers();
 
     // loop over the discovered devices and register each one if it has not already been registered
     for (const device of speakers) {
@@ -96,13 +81,14 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
       const uuid = this.api.hap.uuid.generate(device['Item ID']);
 
       // 检查是否当前默认的speaker
+      // check whether is the default speaker
       if (device['Default'] !== '') {
         this.defaultSpeakerUUID = uuid;
       }
 
       // see if an accessory with the same uuid has already been registered and restored from
       // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+      const existingAccessory = this.cacheAccessories.find(accessory => accessory.UUID === uuid);
 
       if (existingAccessory) {
         // the accessory already exists
@@ -117,18 +103,20 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         new ExamplePlatformAccessory(this, existingAccessory);
 
         // 缓存和目前存在的设备能匹配上，从this.accessories中删除
-        this.accessories.splice(this.accessories.indexOf(existingAccessory), 1);
+        this.cacheAccessories.splice(this.cacheAccessories.indexOf(existingAccessory), 1);
 
         // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
         // remove platform accessories when no longer present
         // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
         // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
+        this.accessories.push(existingAccessory);
       } else {
         // the accessory does not yet exist, so we need to create it
         this.log.info('Adding new accessory:', device['Name']);
 
         // create a new accessory
         const accessory = new this.api.platformAccessory(device['Name'], uuid);
+        // accessory.category = 26;
 
         // store a copy of the device object in the `accessory.context`
         // the `context` property can be used to store any data about the accessory you may need
@@ -140,14 +128,71 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
 
         // link the accessory to your platform
         this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        // this.api.publishExternalAccessories(PLUGIN_NAME, [accessory]);
+        this.accessories.push(accessory);
       }
     }
 
     // 没有匹配上的accessory删除掉
-    if (this.accessories.length > 0) {
-      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, this.accessories);
-      this.accessories = [];
+    if (this.cacheAccessories.length > 0) {
+      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, this.cacheAccessories);
+      this.cacheAccessories = [];
+    }
+  }
+
+
+  /**
+   * get all speakers throught SoundVolumeView.exe
+   * @see https://www.nirsoft.net/utils/sound_volume_view.html
+   * @returns Array
+   */
+  getAllSpeakers() {
+    try {
+      saveSoundItemFile();
+    } catch (error) {
+      this.log.error('保存sound-item.json失败：', (<Buffer> error).toString());
+      return [];
     }
 
+    // 从sound-item.json中读取所有音频设备列表
+    // get audio device list from sound-item.json
+    let fileContent = fs.readFileSync(SOUND_ITEMS_PATH, 'utf8');
+    this.log.debug('SOUND_ITEMS_PATH:', SOUND_ITEMS_PATH);
+    fileContent = fileContent.replace(/^\uFEFF/, '');
+    const soundItems = JSON.parse(fileContent) || [];
+
+    // 筛选出所有speakers
+    // filter all speakers
+    const speakers = soundItems.filter((soundItem) => {
+      return soundItem.Type === 'Device' && soundItem.Direction === 'Render';
+    });
+
+    this.log.debug('speakers:', speakers);
+
+    return speakers;
+  }
+
+
+  updateDevicesState(accessory: PlatformAccessory) {
+
+    const currentUUID = accessory.UUID;
+
+    this.log.debug('updateDevicesState:', currentUUID);
+
+    if (this.defaultSpeakerUUID === currentUUID) {
+      return;
+    }
+
+    this.defaultSpeakerUUID = currentUUID;
+    // 遍历所有speaker，更新其状态
+    // iterate all speakers, update the state
+    for (const speaker of this.accessories) {
+      if (speaker.UUID !== currentUUID) {
+        const service = speaker.getService(this.Service.Lightbulb);
+        if (service) {
+          service.updateCharacteristic(this.Characteristic.On, false);
+        }
+      }
+    }
   }
 }
